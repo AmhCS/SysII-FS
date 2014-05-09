@@ -156,7 +156,7 @@ public class FSmakefile {
 	    return;
 	}
 	
-	while ( nfbCounter != nfb.length - 1 ) {
+	while ( nfbCounter < nfb.length - 1 ) {
 	    freeBlock = getFreeBlock();
 	    incrementFreeBlock();
 	    file.seek(currPos);
@@ -175,7 +175,10 @@ public class FSmakefile {
 	    file.seek(indicePos);
 	    c = 0;
 	    while ( c < 4096 ) {
-		file.write((int)nfb[nfbCounter++]);
+		if ( nfbCounter > nfb.length - 1 ) {
+		    break;
+		}
+		file.writeByte((int)nfb[nfbCounter]);
 		c++;
 		nfbCounter++;
 	    }
