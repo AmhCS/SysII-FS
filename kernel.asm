@@ -1175,6 +1175,68 @@ fd2:
 	JUMP	*+return	;Jump to the return address specified in stack 
 	
 
+	;; check if file exists
+fileExists_Args:
+	SUBUS	%SP	%SP	4
+	JUMP	+fArgs
+
+fileExists:
+	SUBUS %SP %SP 4
+	COPY *%SP 1
+	COPY  %G0 +return2
+	CALL +fCall *%G0
+
+mapStringToInode_Args:
+	SUBUS	%SP	%SP	4
+	JUMP	+fArgs
+
+mapStringToInode:
+	SUBUS %SP %SP 4
+	COPY *%SP 1
+	COPY  %G0 +return2
+	CALL +fCall *%G0
+
+	;; block_trigger, block_base, block_limit, block_num
+	COPY *+block_num 0x01 ;; first block, has filename -> inode number mappings
+	COPY *+block_trigger 0x00
+
+	COPY %G0 *%FP ;; %G0 now holds the first (only) argument, which is the address holding the base of the string filename
+	ADDUS %G1 %G0 12 ;; %G1 now holds the address of the limit of this filename
+
+	COPY %G2 *+block_base ;; %G2 now points to the first character in the first filename in the table
+	COPY %G3 0x0 ;; offset within the file we are looking at
+
+	ADDUS %G4 %G2 4096 ;; %G4 now points to the limit of the first block
+
+searchFilesTop: ;; outer loop (goes through files)
+	BGTE +searchFilesFail %G2 %G4
+
+parseFileNameTop: ;; inner loop (goes through characters in filename)
+	BGTE +parseFileNameEnd %G3 12
+	ADDUS %G5 %G3 %G2 ;; %G5 now points to the char in question in the entry in question
+	BNEQ +parseFileFail *%G0 *%G5
+	ADDUS %G3 %G3 1 ;; next char in filename in table
+	ADDUS %G0 %G0 1 ;; next char in filename we are looking for
+	JUMP +parseFileNameTop
+
+parseFileNameEnd: ;; file found at this point!
+	ADDUS %G2 %G2 12
+	COPY *%SP *%G2 ;; save file number into stack where return value should be
+
+
+parseFileFail:
+	COPY %G3 0x0 ;; reset offset
+	ADDUS %G2 %G2 16 ;; increment %G2, which entry in the table we are looking at
+	JUMP +searchFilesTop
+
+searchFilesFail:
+	COPY *%SP 0x00
+	
+
+	;COPY %G0 +return
+	;CALL +mapStringToInode_Args *%G0
+	;COPY *%SP +file_name
+	;CALL +mapStringToInode *%G0
 
 
 	.Numeric
@@ -1237,3 +1299,8 @@ block_trigger: 0x00
 
 	;; Will load the next program, and run it in user mode
 	;; Doesn't matter if programs don't finish. 
+
+.Text
+
+filename: "somefile.txt"
+
