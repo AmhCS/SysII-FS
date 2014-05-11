@@ -28,7 +28,6 @@
 	COPY	*%G0	0x10
 	
 
-	
 find_free_RAM:	
 	BEQ		+set_trap_base	*%G5	0 	;Branch if Ram is empty
 	ADD		%G5		%G5		16 	;else, check next instruction
@@ -205,14 +204,45 @@ find_block_loop_success:
 	COPY	*%SP	0x00			; Kernel is this program's parent
 	CALL	+process_table_Add	*%G0		; Need to make PTADD more automatic. 
 
-    ;; this is a function call to "fileExists" function.
-    COPY %G0 +return           ;; copy +return into a register
-	CALL +fileExists_Args *%G0   ;; call the functions Args section
+
+
+    ;; this is a function call to "fileExists" function, and a few other tricks.
+    COPY %G0 +return              ;; copy +return into a register
+
+file_adding_test:                 ;;Let's add two files to the directory!
+
+	CALL +fileExists_Args *%G0    ;; call the functions Args section
 	COPY *%SP +file_name          ;; copy your argument into the SP
 	CALL +fileExists *%G0         ;; call the function itself. 
     ;; complete function call! 
+    
+    COPY %G3 *%SP                ;; Copy result from fileExists into %G3
+    BEQ +add_file1_to_block_device %G3 0       ;; if it returned 0, then file not found
+
+    CALL +fileExists_Args *%G0
+    COPY *%SP +file_name2
+    CALL +fileExists *%G0
+    
+    COPY %G3 *%SP                ;; checking if file2 exists in your block_device
+    BEQ +add_file2_to_block_device %G3 0
+    JUMP +finish_file_adding_test           ;; if both files exist, then we'll begin running processes
+    
+add_file1_to_block_device:              ;; if file1 not found, lets add it to the directory
+    CALL +input_File_Args *%G0
+    COPY *%SP +file_name
+    CALL +input_File *%G0
+    JUMP +file_adding_test
 
 
+add_file2_to_block_device:              ;; if file2 not found, lets add it to the directory too
+    CALL +input_File_Args *%G0
+    COPY *%SP +file_name2
+    CALL +input_File *%G0
+    JUMP +file_adding_test
+
+
+
+finish_file_adding_test:
 	;; Run init, if it exists. 
 	;; everything above this works. 
 	JUMP	+process_table_Run_Next
@@ -600,8 +630,7 @@ process_table_Remove_complete:
 process_table_Remove_fail:
 	COPY	%G2		1 	 	;for debugging
 	HALT			; Could not find PID to remove process 
-	
-	
+
 	
 ;;; process_table Run Next Process (), results: 0
 ;;; Just jump to process_table_Run_Next; Do not Call it, it will not return. 
@@ -720,8 +749,7 @@ process_table_Run_one:
 	
 process_table_Run_Process_fail:
 	HALT			; Could not find PID to run process 
- 	
-	
+
 
 ;;; Process Table Update function (status), results: 0
 ;;;	Updates the last interrupted process's PT information
@@ -793,8 +821,6 @@ process_table_Update:
 	COPY	%FP		*+oldFP2
 	
 	JUMP	+fDone
-	
-	
 
 ;;; Process Table Update Process function (pid, status), results : 0
 ;;; Updates a chosen process's PT information 
@@ -847,8 +873,7 @@ process_table_Update_Process_fail:
 	COPY	%G2		2 	 	;for debugging
 	HALT 
 	
-	
-		
+
 ;;; Process Table Search function(PID). returns the address of requested PID. 
 process_table_Search_Args:
 	SUBUS	%SP	%SP	4
@@ -1233,16 +1258,16 @@ fileExists:
         JUMP +parseFileNameTop
 
     parseFileNameEnd:               ;; file found at this point!
-        ADDUS %G4 %G4 12            ;; %G4 points to the block number of found file
-        SUBUS %SP %SP 4             ;; begin burying result.
-        COPY *%SP *%G4              ;; save file number into stack where return value should be
         COPY %G0 +return
-        ADDUS %SP %SP 4             ;; Since we decremented before calling fArgs, we have to increment it back
         CALL +print_Args *%G0
         COPY *%SP +file_found
         CALL +print *%G0
-        JUMP +fDone
 
+        ADDUS %G4 %G4 12            ;; %G4 points to the block number of found file
+        SUBUS %SP %SP 4             ;; begin burying result.
+        COPY *%SP *%G4              ;; save file number into stack where return value should be
+        ADDUS %SP %SP 4             ;; Since we decremented before calling fArgs, we have to increment it back
+        JUMP +fDone
 
     parseFileFail:                  ;; Checked entry did not contain file name. So check next entry.
         COPY %G3 0x0                ;; reset offset
@@ -1250,14 +1275,230 @@ fileExists:
         JUMP +searchFilesTop        ;; Jump back to the top and search again
 
     searchFilesFail:                ;; we searched entire file table and couldn't find file
-        SUBUS %SP %SP 4
-        COPY *%SP 0x00              ;; 0x00 will be this function's return value when file not found
         COPY %G0 +return
-        ADDUS %SP %SP 4             ;; bury the result so that fDone will find it
         CALL +print_Args *%G0
         COPY *%SP +file_not_found
         CALL +print *%G0
+
+        SUBUS %SP %SP 4
+        COPY *%SP 0x00              ;; 0x00 will be this function's return value when file not found
+        ADDUS %SP %SP 4             ;; bury the result so that fDone will find it
         JUMP +fDone                 ;; Jump to fDone for epilogue
+
+
+;;;Input_File: function that inputs a file into the directory.
+;;; it inputs the filename, inputs the next free block, increments the nextfreeblock counter
+;;; args: <filename>
+input_File_Args:
+    JUMP +fArgs 
+    
+input_File:
+    SUBUS %SP %SP 4
+	COPY *%SP 0
+	COPY  %G0 +return2
+	CALL +fCall *%G0
+    
+    COPY %G0 +return
+    CALL +find_Next_Free_Block_Args *%G0
+    ADDUS %SP %SP 4
+    CALL +find_Next_Free_Block *%G0
+    COPY %G1 *%SP                       ;; Copy next free block into %G1
+    ADDUS %SP %SP 4
+    BEQ +input_File_Fail %G1 0          ;; should be impossible unless block device isn't formatted
+    
+    CALL +find_Next_Free_Directory_Args *%G0
+    ADDUS %SP %SP 4
+    CALL +find_Next_Free_Directory *%G0
+    COPY %G2 *%SP                       ;; Copy next free directory space in %G2
+    ADDUS %SP %SP 4
+    BEQ +input_File_Fail %G2 0          ;; if directory is full, find_next_free_directory returns 0
+    
+
+    CALL +write_Text_Args *%G0
+    COPY *%SP *%FP                      ;; arg 1: filename start address
+    SUBUS %SP %SP 4
+    COPY *%SP 12                        ;; arg 2: limit on bytes - 12 byte entries
+    SUBUS %SP %SP 4
+    COPY *%SP %G2                      ;; arg 3: destination - next free directory space
+    CALL +write_Text *%G0
+
+    ADDUS %G2 %G2 12            ;; look at where file's inode # should be
+    COPY *%G2 %G1               ;; input free block into the entry
+    
+    COPY %G0 *+block_num
+    COPY *%G0 0x01
+    COPY %G0 *+block_trigger
+    COPY *%G0 0x01              ;; save it in block device
+    
+    COPY %G0 +return
+    CALL +increment_Free_Block_Args *%G0    ;; prepare to increment the next_free_block counter
+    ADDUS %SP %SP 4                         ;; if it takes no arguments, increment SP by 4
+    CALL +increment_Free_Block  *%G0        ;; increment the next_free_block counter
+    
+    JUMP +fDone                 ;; finish
+    
+input_File_Fail:
+    COPY %G0 +return
+    CALL +print_Args *%G0
+    COPY *%SP +input_File_Fail_text
+    CALL +print *%G0
+    HALT
+
+.Text
+input_File_Fail_text: "Input fail could not find space in directory for new file!"
+
+.Code
+
+
+increment_Free_Block_Args:
+	JUMP +fArgs
+
+increment_Free_Block:
+	SUBUS	%SP	%SP	4
+	COPY	*%SP	0
+	COPY	%G0	+return2
+	CALL	+fCall	*%G0
+	
+	COPY	%G0 +return 
+	CALL	+find_Next_Free_Block_Args *%G0
+	ADDUS	%SP %SP 4 
+	CALL	+find_Next_Free_Block *%G0
+		
+    COPY	%G0 *%SP                ;;%G0 gets current free block #
+    ADDUS    %G1 *+block_base 12    ;;%G1 is a pointer to the free block counter
+    ADDUS    *%G1 %G0 1             ;;Increment that counter by 1
+
+    COPY    %G0 *+block_num         ;; About to overwrite
+    COPY    %G1 *+block_trigger
+    COPY    *%G0 0                  ;; choose the super block
+    COPY    *%G1 1                  ;; 'write' our changes into block device
+
+    ADDUS   %SP %SP 4               ;; Put SP back to where it was before we got find_next_free_block return value
+	
+	JUMP	+fDone                  ;; Finish, jump to function epilogue
+
+
+
+;;;Write_Text: write's a string of specified length from one place to another
+;;; returns -> none;  arguments: <filename start address> <limit on bytes> <destination address>
+write_Text_Args:
+    JUMP +fArgs
+    
+write_Text:
+    SUBUS %SP %SP 4
+	COPY *%SP 0
+	COPY  %G0 +return2
+	CALL +fCall *%G0
+    
+    COPY %G1 *%FP       ;%G1 gets the start address 
+    ADDUS %G3 %FP 4
+    COPY  %G3 *%G3      ;%G3 gets the limit
+    ADDUS %G2 %FP 8
+    COPY %G2 *%G2       ;%G2 gets the destination 
+    
+write_Text_loop: 
+    BEQ  +write_Text_Done  %G3  0
+    COPYB %G4 *%G1
+    BEQ  +write_Text_Done  %G4 0
+    COPYB *%G2 *%G1
+    SUBUS %G3 %G3 1
+    ADDUS %G2 %G2 1
+    ADDUS %G1 %G1 1
+    JUMP +write_Text_loop
+    
+write_Text_Done:
+    COPY %G0 +return
+    CALL +print_Args *%G0
+    COPY *%SP +write_Text_Done_text
+    CALL +print *%G0
+    JUMP +fDone
+
+.Text
+write_Text_Done_text: "Write text complete!"
+
+.Code
+
+;;;First_Free_Entry function: A function that finds the first free entry. It goes to super_block and  looks at the number at free_position.
+;; 	results: 1   ;; Takes no args, so after calling fArgs add 4 back to SP. 
+find_Next_Free_Block_Args:
+	SUBUS	%SP	%SP	4
+	JUMP +fArgs
+
+find_Next_Free_Block:
+	SUBUS	%SP	%SP	4
+	COPY	*%SP	1
+	COPY	%G0	+return2
+	CALL	+fCall	*%G0
+	
+	COPY	%G1 *+block_num                     ;Get address saved in block_num
+	COPY	*%G1 0                              ;block# set to 0, to access the super_block
+	COPY 	%G2 *+block_trigger                 ;Get address saved in block_trigger
+	COPY	*%G2 0                              ;set block_trigger to 0
+	COPY	%G3	*+block_base ;Get address saved in block_base
+
+	ADDUS	%G4	%G3	12                          ;add 12 to next free block number
+	COPY	%G4 *%G4                            ;copy the value
+
+	SUBUS	%SP		%SP	4
+	COPY	*%SP	%G4                         ; Buries its result
+	ADDUS	%SP		%SP	4
+	JUMP	+fDone                              ; Jumps to fDone.
+
+
+;;;find_Next_Free_Directory: Function that finds next open space in block device's file table
+;;; returns -> address of free entry space, or returns 0 if no space left. No parameters
+find_Next_Free_Directory_Args:
+    SUBUS	%SP	%SP	4
+	JUMP +fArgs
+    
+find_Next_Free_Directory: 
+    SUBUS	%SP	%SP	4
+	COPY	*%SP	1
+	COPY	%G0	+return2
+	CALL	+fCall	*%G0
+    
+    COPY %G0 +return
+    CALL +open_Block_Args *%G0
+    COPY *%SP 1
+    CALL +open_Block *%G0
+    
+    COPY %G3 *+block_base
+
+    find_Free_Directory_loop:   BGTE  +find_Free_Directory_Fail  %G0  *+block_buffer_limit
+        COPYB %G1 *%G3
+        BEQ     +find_Free_Directory_Success    %G1     0
+        ADDUS   %G3     %G3     16
+        JUMP    +find_Free_Directory_loop
+        
+    find_Free_Directory_Success:    ; if a free space was found, return the address
+        SUBUS %SP %SP 4
+        COPY %G0 +return
+        CALL +print_Args *%G0
+        COPY *%SP +directory_free
+        CALL +print *%G0
+
+        COPY *%SP %G3               ; bury result if it's found
+        ADDUS %SP %SP 4
+        JUMP +fDone
+        
+    find_Free_Directory_Fail:       ; if a free space was not found, print that, and halt. 
+        COPY %G0 +return
+        CALL +print_Args *%G0
+        COPY *%SP +directory_full
+        CALL +print *%G0
+
+        SUBUS %SP %SP 4
+        COPY *%SP 0x00              ; bury result, not found.
+        ADDUS %SP %SP 4
+
+        HALT
+
+.Text
+directory_full: "The file directory can't hold anymore entries!!"
+directory_free: "Found free space in the directory's file table."
+
+.Code
+
 
 
 
@@ -1275,13 +1516,7 @@ print:
     COPY %G1 *%FP                   ;; %G1 has first address of string to be printed
     ADDUS %G3 0x190 *+console_base         ;; %G3 initializes to console_base
     COPY %G5 0x00
-    
-   ;; space_loop:
-     ;;   BGTE +print_loop %G5 0x50
-       ; ADDUS %G4 %G5 %G3
-        ;ADDUS %G5 %G5 1
-        ;COPYB %G4 0x20
-        ;ADDUS %G4
+
     print_loop:
         COPYB %G0 *%G1                  ;; %G0 will carry the bytes
         COPYB *%G3 %G0                  ;; put %G0's character in console
@@ -1409,6 +1644,7 @@ block_buffer_limit: 0x00
 .Text
 
 file_name: "somefile.txt"
+file_name2: "testfile.txt"
 file_not_found: "file does not exists"
 file_found: "file found!"
 
