@@ -157,7 +157,7 @@ find_block_loop_top:
 find_block_continue_loop:
 	;; Advance to the next entry.
 	ADDUS		%G2			%G2		12
-	JUMP		+find_device_loop_top
+	JUMP		+find_block_loop_top
 find_block_loop_failure:
 	;; Set the return value to a null pointer.
 	HALT
@@ -1175,22 +1175,13 @@ fd2:
 	JUMP	*+return	;Jump to the return address specified in stack 
 	
 
-	;; check if file exists
+	;; check if file exists, returns block # if it does, returns 0 if it does not.
+    ;; basically map's string to inode. Takes pointer to a filename as it's parameter. 
 fileExists_Args:
 	SUBUS	%SP	%SP	4
 	JUMP	+fArgs
 
 fileExists:
-	SUBUS %SP %SP 4
-	COPY *%SP 1
-	COPY  %G0 +return2
-	CALL +fCall *%G0
-
-mapStringToInode_Args:
-	SUBUS	%SP	%SP	4
-	JUMP	+fArgs
-
-mapStringToInode:
 	SUBUS %SP %SP 4
 	COPY *%SP 1
 	COPY  %G0 +return2
@@ -1222,6 +1213,7 @@ parseFileNameTop: ;; inner loop (goes through characters in filename)
 parseFileNameEnd: ;; file found at this point!
 	ADDUS %G2 %G2 12
 	COPY *%SP *%G2 ;; save file number into stack where return value should be
+    JUMP +fDone
 
 
 parseFileFail:
@@ -1231,6 +1223,7 @@ parseFileFail:
 
 searchFilesFail:
 	COPY *%SP 0x00
+    JUMP +fDone
 	
 
 	;COPY %G0 +return
