@@ -139,6 +139,45 @@ find_device_loop_success:
 	COPY	%G0		+return				; console_base found 
 	CALL	+process_table_Print	*%G0	; works 
 	
+    
+    
+    ;;; Let's find the block_device.
+procedure_find_block:
+	COPY		%G0		5		; Type
+	COPY		%G1		1		; Instance 
+	COPY		%G2		0x1000	; Bus controller base
+find_block_loop_top:
+	;; End the search with failure if we've reached the end of the table without finding the device.
+	BEQ		+find_block_loop_failure	*%G2		0
+	;; If this entry matches the device type we seek, then decrement the instance count.  If the instance count hits zero, then
+	;; the search ends successfully.
+	BNEQ		+find_block_continue_loop	*%G2		%G0
+	SUB		%G1				%G1		1
+	BEQ		+find_block_loop_success	%G1		0
+find_block_continue_loop:
+	;; Advance to the next entry.
+	ADDUS		%G2			%G2		12
+	JUMP		+find_device_loop_top
+find_block_loop_failure:
+	;; Set the return value to a null pointer.
+	HALT
+find_block_loop_success:
+	;; Save the console base and limit in statics
+	ADDUS	%G2		%G2		4
+	COPY	%G0		+block_base
+	COPY	*%G0	*%G2
+	ADDUS	%G2		%G2		4
+	COPY	%G0		+block_limit
+	COPY	*%G0	*%G2
+    
+    COPY    %G0     +block_trigger
+    COPY    %G2     +block_limit
+    SUBUS   *%G0    *%G2    4       ;; initialize address of trigger on block device
+    COPY    %G0     +block_num
+    SUBUS   *%G0    *%G2    8       ;; initialize address of block device block # input
+    
+    
+
 	;; 1. WRITE CODE TO COPY INIT TO RAM HERE, THEN JUMP TO IT.
 	;; If 0x1030 is 2, copy and run it. Else, do nothing. 
 	COPY	%G1		*0x1030			; type of next ROM
@@ -164,7 +203,8 @@ find_device_loop_success:
 	SUBUS	%SP		%SP		4
 	COPY	*%SP	0x00			; Kernel is this program's parent
 	CALL	+process_table_Add	*%G0		; Need to make PTADD more automatic. 
-	
+
+
 	;; Run init
 	;; everything above this works. 
 	JUMP	+process_table_Run_Next
@@ -1190,6 +1230,10 @@ oldSP2:	0x00
 oldFP2: 0x00
 kernel_SP: 0x00
 kernel_FP: 0x00
+block_base: 0x00
+block_limit: 0x00
+block_num: 0x00
+block_trigger: 0x00
 
 	;; Will load the next program, and run it in user mode
 	;; Doesn't matter if programs don't finish. 
