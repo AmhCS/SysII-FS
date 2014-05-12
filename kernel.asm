@@ -233,22 +233,27 @@ add_file1_to_block_device:              ;; if file1 not found, lets add it to th
     CALL +input_File *%G0
     JUMP +file_adding_test
 
-
 add_file2_to_block_device:              ;; if file2 not found, lets add it to the directory too
     CALL +input_File_Args *%G0
     COPY *%SP +file_name2
     CALL +input_File *%G0
     JUMP +file_adding_test
 
-
-
 finish_file_adding_test:
-	;; Run init, if it exists. 
+   ; CALL +delete_File_Args *%G0
+   ; COPY *%SP +file_name
+   ; CALL +delete_File *%G0
+    
+   ; CALL +fileExists_Args *%G0
+   ; COPY *%SP +file_name
+   ; CALL +fileExists *%G0
+   ; HALT
+
+	;; Run init, if it exists.
 	;; everything above this works. 
 	JUMP	+process_table_Run_Next
 	
-	
-	
+    
 	HALT							;Will set up init later
 	
 ;;; Setup can only be run when total_PIDs is 1. Otherwise, it halts. 
@@ -373,15 +378,30 @@ SETALM	*+ALM	0x00
 ;;; If Syscall type is 1, then jump to +sys1(setup)
 	;; Save registers in temp without using registers 		
 system_Call0:
+
 	ADDUS	%SP		%SP		*+BS	; SP becomes physical again / Must be after every interrupt. 
 	SUBUS	%SP		%SP		4
-	COPY	*%SP	%G0				; save %G0 contents 	
+	COPY	*%SP	%G0				; save %G0 contents 
+    
+    COPY    %G0     +syscall_Type
+    COPY    *%G0    *%SP
+    COPY    %G0     +syscall_Arg1
+    COPY    *%G0    %G1
+    COPY    %G0     +syscall_Arg2
+    COPY    *%G0    %G2
+    COPY    %G0     +syscall_Arg3
+    COPY    *%G0    %G3
+    COPY    %G0     +syscall_Arg4
+    COPY    *%G0    %G4
+    COPY    %G0     +syscall_Arg5
+    COPY    *%G0    %G5
 
 	COPY	%G0		+return
 	COPY	*%G0	+system_Call1		
 	COPY	%G0		*%SP
 	ADDUS	%SP		%SP		4
 	JUMP	+process_table_Update_Process_Args
+
 system_Call1:
 	COPY	*%SP	*+current_PID	;PT_update 1st arg: PID
 	COPY	%G0		+return 
@@ -392,7 +412,7 @@ system_Call1:
 	
 	;;Need address of syscall
 	COPY	%G0		+address_of_interruption		
-	ADDUS	*%G0	*+BS	*+IB		;%G1 has place of interruption
+	ADDUS	*%G0	*+BS	*+IB		;%G0 has place of interruption
 	
 	;; Need to get Kernel's registers back. 
 	COPY	%G0		+BS
@@ -406,10 +426,12 @@ system_Call1:
 	COPY	%G0		*+address_of_interruption	;%G0 has physical address of syscall
 	ADDUS	%G0		%G0		16					; Address right after syscall
 	
-	BEQ		+system_setup	*%G0	1		; setup is syscall arg is 1
-	BEQ		+system_exit	*%G0	0		; exit if syscall arg is 0
-	BEQ		+system_fork	*%G0	2		; fork if syscall arg is 2
-	;; The address after the syscall had neither 1, 0 nor 2.
+	BEQ		+system_setup	*+syscall_Type	1		; setup is syscall arg is 1
+	BEQ		+system_exit	*+syscall_Type	0		; exit if syscall arg is 0
+	BEQ		+system_fork	*+syscall_Type	2		; fork if syscall arg is 2
+    BEQ     +system_write   *+syscall_Type  5       ; write if syscall is 5
+    BEQ     +system_read    *+syscall_Type  4       ; read if syscall is 4
+	;; The address after the syscall had none of them
 	HALT
 	
 system_setup:
@@ -485,6 +507,13 @@ system_fork:
 	;; Save temp in process table entry of current process 
 	;; Need process_table_Update_Process_Current function
 
+    ;; System_write expects at least 3 arguments, with %G4 being an optional argument
+    ;; %G1 = pointer to filename;  %G2 = pointer to file start;  %G3 = pointer to file end;  %G4 = permissions (4 bits, blank,r,w,x)
+system_write:
+    HALT
+
+system_read:
+    HALT
 
 ;;;These functions are used to manipulate the process table.
 
@@ -1234,7 +1263,7 @@ fileExists:
     COPY %G3 0x0                ;; offset within the files we are looking at
     COPY %G4 *+block_base       ;; %G5 has the block base
 
-	ADDUS %G0 %G3 *%FP          ;; %G0 now holds the first (only) argument, which is the address holding the base of the string filename
+	ADDUS %G0 %G3 *%FP       ;; %G0 now holds the first (only) argument, which is the address holding the base of the string filename
 	COPYB %G1 *%G0              ;; %G1 now holds the first byte of this file name
     
     ADDUS %G0 %G3 %G4           ;; %G0 now points to the first character in the file table
@@ -1579,6 +1608,85 @@ open_Block:
 	JUMP	+fDone				;Jumps to fDone
 
 
+;;; delete files, update free page
+;;; Needs debugging. Don't worry about this. 
+
+    delete_File_Args:
+        JUMP +fArgs
+        
+    delete_File:
+        SUBUS %SP %SP 4
+        COPY *%SP 0
+        COPY  %G0 +return2
+        CALL +fCall *%G0  
+        
+        COPY %G0 +return
+        CALL +open_Block_Args *%G0
+        COPY *%SP 0
+        CALL +open_Block *%G0
+
+        COPY %G3 0x0                ;; offset within the files we are looking at
+        COPY %G4 *+block_base       ;; %G5 has the block base
+        HALT
+
+        ADDUS %G0 %G3 *%FP          ;; %G0 now holds the first (only) argument, which is the address holding the base of the string filename
+        COPYB %G1 *%G0              ;; %G1 now holds the first byte of this file name
+    
+        ADDUS %G0 %G3 %G4           ;; %G0 now points to the first character in the file table
+        COPYB %G2 *%G0              ;; %G4 now holds that first byte of this file name
+
+
+    delete_SearchFilesTop:             ;; outer loop (goes through each filename in the table)
+        BGTE +delete_SearchFilesFail %G4 *+block_buffer_limit          ;; if we searched entire file table, we couldn't find it.
+
+    delete_ParseFileNameTop: ;; inner loop (goes through characters in filename)
+        BGTE +delete_ParseFileNameEnd %G3 12
+
+        ADDUS %G0 %G3 *%FP          ;; %G0 now holds the first (only) argument, which is the address holding the base of the string filename
+        COPYB %G1 *%G0              ;; %G1 now holds the first byte of this file name
+
+        ADDUS %G0 %G3 %G4           ;; %G0 now points to the first character in the file table
+        COPYB %G2 *%G0              ;; %G4 now holds that first byte of this file name
+
+        BNEQ +delete_ParseFileFail %G1 %G2 ;; if the two characters don't match, then move to next entry.
+        ADDUS %G3 %G3 1             ;; if they do match, try next char in filename and in table entry name.
+        JUMP +delete_ParseFileNameTop
+
+    delete_ParseFileNameEnd:               ;; file found at this point!
+        COPY %G0 +return
+        CALL +print_Args *%G0
+        COPY *%SP +file_found
+        CALL +print *%G0
+
+        COPY *%G4 0x00
+        ADDUS %G4 %G4 4
+        COPY *%G4 0x00
+        ADDUS %G4 %G4 4
+        COPY *%G4 0x00
+        ADDUS %G4 %G4 4
+        COPY *%G4 0x00
+        ADDUS %G4 %G4 4
+        
+        COPY %G0 +block_trigger
+        COPY *%G0 1
+
+        JUMP +fDone
+
+    delete_ParseFileFail:                  ;; Checked entry did not contain file name. So check next entry.
+        COPY %G3 0x0                ;; reset offset
+        ADDUS %G4 %G4 16            ;; increment %G4, which is the entry in the table we are looking at
+        JUMP +delete_SearchFilesTop        ;; Jump back to the top and search again
+
+    delete_SearchFilesFail:            ;; we searched entire file table and couldn't find file
+        COPY %G0 +return
+        CALL +print_Args *%G0
+        COPY *%SP +file_not_found
+        CALL +print *%G0
+
+        JUMP +fDone
+
+
+
 	.Numeric
 total_PIDs: 0x00	; total amount of pids
 current_PID: 0x00	; current pid being used
@@ -1604,7 +1712,12 @@ LM: 0x00
 ALM: 0x00		; Trying to figure out how to use alarm 
 ALM2: 0x00
 IB:	0x101			; has interrupt information 
-
+syscall_Type: 0x00  ; %G0 provides the type of syscall for a process.
+syscall_Arg1: 0x00  ;provided by %G1 at syscall
+syscall_Arg2: 0x00  ; %G2
+syscall_Arg3: 0x00  ; %G3
+syscall_Arg4: 0x00
+syscall_Arg5: 0x00
 
 ;;; These temporary variables are for calling functions
 return: 0x00	;call sends return addresses here
