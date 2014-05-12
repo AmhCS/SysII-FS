@@ -386,15 +386,15 @@ system_Call0:
     COPY    %G0     +syscall_Type
     COPY    *%G0    *%SP
     COPY    %G0     +syscall_Arg1
-    COPY    *%G0    %G1
+    ADDUS    *%G0    %G1  *+BS
     COPY    %G0     +syscall_Arg2
-    COPY    *%G0    %G2
+    ADDUS    *%G0    %G2  *+BS
     COPY    %G0     +syscall_Arg3
-    COPY    *%G0    %G3
+    ADDUS    *%G0    %G3  *+BS
     COPY    %G0     +syscall_Arg4
-    COPY    *%G0    %G4
+    ADDUS    *%G0    %G4  *+BS
     COPY    %G0     +syscall_Arg5
-    COPY    *%G0    %G5
+    ADDUS    *%G0    %G5 *+BS
 
 	COPY	%G0		+return
 	COPY	*%G0	+system_Call1		
@@ -1329,6 +1329,50 @@ searchFilesFail:                ;; we searched entire file table and couldn't fi
     COPY *%SP 0x00              ;; 0x00 will be this function's return value when file not found
     ADDUS %SP %SP 4             ;; bury the result so that fDone will find it
     JUMP +fDone                 ;; Jump to fDone for epilogue
+
+
+;;;write_block function: Copies byte by byte from the file_start address to the file_end onto the specified block. 
+;;;args: 1.file_start 2.file_end  3.desired block#	results:0
+
+;;;If you copy anything to the block base, or anywhere between block base and block_buffer_limit, 
+;;;it doesn't go into the block_device until you put a 1 into the trigger.
+;;;If you put a 0 into the trigger, then that "buffer space" will be filled with the content of the specified block, 
+;;;instead of pushing things into the block device.
+;;;COPY first, then put a 1 in block_trigger-- copies whatever you've added to the block_buffer to the block_device.
+
+write_block_Args: 
+	JUMP +fArgs
+	
+write_block: 
+	SUBUS	%SP %SP 4
+	COPY	*%SP	0
+	COPY	%G0 +return2
+	CALL	+fCall *%G0
+	
+	COPY	%G0	*%FP		;Gets file_start address 
+	ADDUS	%FP	%FP	4
+	COPY	%G1	*%FP		;Gets file_end address
+	ADDUS	%FP	%FP	4
+	COPY	%G4	*%FP		;Gets block number
+	
+	COPY	%G3	*+block_num		;Gets block_num address 
+	COPY	*%G3	%G4		;Setting the block number
+		
+	COPY	%G2 *+block_base		;Get block_base address
+
+	;; Copy the contents of the specified file, byte by byte, into the block_device.						
+copy_loop_beg:
+	BEQ			+copy_loop_end	%G0	%G1 ; If %G0(file_start address) is equal to %G1 (the file_end address), end the copying.
+	COPYB		*%G2	*%G0	 ; Copy the current byte of file(*%G0) to block buffer space.
+	ADDUS		%G2		%G2		1 ; Next byte of the the block buffer. %G2 has block_base. 
+	ADDUS		%G0		%G0		1 ; Next byte of the file. Add one to file_start. 
+	JUMP		+copy_loop_beg
+	
+copy_loop_end:	
+	COPY	%G2	*+block_trigger ;Get address of block_trigger 
+	COPY	*%G2 1	;Set block_trigger to 1 to copy contents of buffer space to block_device
+	JUMP	+fDone	;Jumps to fDone
+
 
 
 ;;; readBlock should take a block # and a RAM "start" address. It will copy the given block into RAM at the start specified
