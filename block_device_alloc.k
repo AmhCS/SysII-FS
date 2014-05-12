@@ -1,12 +1,11 @@
-
 procedure 4 block_device_alloc()
-	  [4 free]
-	  [4 device]
-	  [4 base]
-	  [4 limit]
-	  [4 blocknum]
-	  [4 trigger]
-	  [4 freeadd]
+	  	  [4 free
+		   4 device
+	  	   4 base
+	  	   4 limit
+	  	   4 blocknum
+	  	   4 trigger
+	  	   4 freeadd]
 {
 	#find block device in BC, code is 5
 	(= &device 0x1000) 
