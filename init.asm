@@ -1,6 +1,7 @@
 ;;; Init Program 
 
 .Code
+COPY %G0 1
   SYSC			; Call's system call
 
 .Numeric
