@@ -510,7 +510,23 @@ system_fork:
     ;; System_write expects at least 3 arguments, with %G4 being an optional argument
     ;; %G1 = pointer to filename;  %G2 = pointer to file start;  %G3 = pointer to file end;  %G4 = permissions (4 bits, blank,r,w,x)
 system_write:
-    HALT
+	;; +syscall_Arg1 -> filename
+	;; +syscall_Arg2 -> start address of that file in RAM
+	;; +syscall_Arg3 -> end address of that file in RAM
+
+
+	;; copy arguments into registers
+	COPY %G0 +syscall_Arg1
+	COPY %G1 +syscall_Arg2
+	COPY %G2 +syscall_Arg3
+
+write_top:
+	BGTE +write_done %G1 %G2
+
+	ADDUS %G2 %G2 1
+	JUMP +write_top
+
+write_done:
 
 system_read:
     HALT
@@ -1270,50 +1286,77 @@ fileExists:
     COPYB %G2 *%G0              ;; %G4 now holds that first byte of this file name
 
 
-    searchFilesTop:             ;; outer loop (goes through each filename in the table)
-        BGTE +searchFilesFail %G4 *+block_buffer_limit          ;; if we searched entire file table, we couldn't find it.
+searchFilesTop:             ;; outer loop (goes through each filename in the table)
+    BGTE +searchFilesFail %G4 *+block_buffer_limit          ;; if we searched entire file table, we couldn't find it.
 
-    parseFileNameTop: ;; inner loop (goes through characters in filename)
-        BGTE +parseFileNameEnd %G3 12
+parseFileNameTop: ;; inner loop (goes through characters in filename)
+    BGTE +parseFileNameEnd %G3 12
 
-        ADDUS %G0 %G3 *%FP          ;; %G0 now holds the first (only) argument, which is the address holding the base of the string filename
-        COPYB %G1 *%G0              ;; %G1 now holds the first byte of this file name
+    ADDUS %G0 %G3 *%FP          ;; %G0 now holds the first (only) argument, which is the address holding the base of the string filename
+    COPYB %G1 *%G0              ;; %G1 now holds the first byte of this file name
 
-        ADDUS %G0 %G3 %G4           ;; %G0 now points to the first character in the file table
-        COPYB %G2 *%G0              ;; %G4 now holds that first byte of this file name
+    ADDUS %G0 %G3 %G4           ;; %G0 now points to the first character in the file table
+    COPYB %G2 *%G0              ;; %G4 now holds that first byte of this file name
 
-        BNEQ +parseFileFail %G1 %G2 ;; if the two characters don't match, then move to next entry.
-        ADDUS %G3 %G3 1             ;; if they do match, try next char in filename and in table entry name.
-        JUMP +parseFileNameTop
+    BNEQ +parseFileFail %G1 %G2 ;; if the two characters don't match, then move to next entry.
+    ADDUS %G3 %G3 1             ;; if they do match, try next char in filename and in table entry name.
+    JUMP +parseFileNameTop
 
-    parseFileNameEnd:               ;; file found at this point!
-        COPY %G0 +return
-        CALL +print_Args *%G0
-        COPY *%SP +file_found
-        CALL +print *%G0
+parseFileNameEnd:               ;; file found at this point!
+    COPY %G0 +return
+    CALL +print_Args *%G0
+    COPY *%SP +file_found
+    CALL +print *%G0
 
-        ADDUS %G4 %G4 12            ;; %G4 points to the block number of found file
-        SUBUS %SP %SP 4             ;; begin burying result.
-        COPY *%SP *%G4              ;; save file number into stack where return value should be
-        ADDUS %SP %SP 4             ;; Since we decremented before calling fArgs, we have to increment it back
-        JUMP +fDone
+    ADDUS %G4 %G4 12            ;; %G4 points to the block number of found file
+    SUBUS %SP %SP 4             ;; begin burying result.
+    COPY *%SP *%G4              ;; save file number into stack where return value should be
+    ADDUS %SP %SP 4             ;; Since we decremented before calling fArgs, we have to increment it back
+    JUMP +fDone
 
-    parseFileFail:                  ;; Checked entry did not contain file name. So check next entry.
-        COPY %G3 0x0                ;; reset offset
-        ADDUS %G4 %G4 16            ;; increment %G4, which is the entry in the table we are looking at
-        JUMP +searchFilesTop        ;; Jump back to the top and search again
+parseFileFail:                  ;; Checked entry did not contain file name. So check next entry.
+    COPY %G3 0x0                ;; reset offset
+    ADDUS %G4 %G4 16            ;; increment %G4, which is the entry in the table we are looking at
+    JUMP +searchFilesTop        ;; Jump back to the top and search again
 
-    searchFilesFail:                ;; we searched entire file table and couldn't find file
-        COPY %G0 +return
-        CALL +print_Args *%G0
-        COPY *%SP +file_not_found
-        CALL +print *%G0
+searchFilesFail:                ;; we searched entire file table and couldn't find file
+    COPY %G0 +return
+    CALL +print_Args *%G0
+    COPY *%SP +file_not_found
+    CALL +print *%G0
 
-        SUBUS %SP %SP 4
-        COPY *%SP 0x00              ;; 0x00 will be this function's return value when file not found
-        ADDUS %SP %SP 4             ;; bury the result so that fDone will find it
-        JUMP +fDone                 ;; Jump to fDone for epilogue
+    SUBUS %SP %SP 4
+    COPY *%SP 0x00              ;; 0x00 will be this function's return value when file not found
+    ADDUS %SP %SP 4             ;; bury the result so that fDone will find it
+    JUMP +fDone                 ;; Jump to fDone for epilogue
 
+
+;;; readBlock should take a block # and a RAM "start" address. It will copy the given block into RAM at the start specified
+readBlock_Args:
+	JUMP	+fArgs
+
+readBlock:
+	SUBUS %SP %SP 4
+	COPY *%SP 0
+	COPY  %G0 +return2
+	CALL +fCall *%G0
+
+    ;; open_Block interfaces with block device, given a block # it triggers it to show up in the block device buffer
+    COPY %G0 +return
+    CALL +open_Block_Args *%G0
+    COPY *%SP *%FP ;; FP is pointing to first argument, which is block #
+    CALL +open_Block *%G0
+
+    COPY %G0 *+block_base
+    COPY %G1 *+block_buffer_limit
+    COPY %G2 *%FP ;; %G2 -> block # (first arg)
+    ADDUS %FP %FP 4
+    COPY %G3 *%FP ;; %G3 -> start address in RAM to copy to (second arg)
+
+    ;; TODO: DO COPY WITH DMA PORTAL
+
+
+	
 
 ;;;Input_File: function that inputs a file into the directory.
 ;;; it inputs the filename, inputs the next free block, increments the nextfreeblock counter
