@@ -1398,8 +1398,6 @@ readBlock:
     COPY %G3 *%FP ;; %G3 -> start address in RAM to copy to (second arg)
 
     ;; TODO: DO COPY WITH DMA PORTAL
-
-
 	
 
 ;;;Input_File: function that inputs a file into the directory.
