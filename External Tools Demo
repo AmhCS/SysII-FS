@@ -1,0 +1,28 @@
+//Here is a demo of how to use external-tools.
+//By Junyu Chen
+
+
+
+checking the empty block-device:
+hexedit block-device.data 
+
+format the block-device:
+java external_tools.ExternalTools 0
+
+checking the formatted block-device:
+hexedit block-device.data 
+
+checking the makefile function when no such file exits:
+java external_tools.ExternalTools 1 hoho.txt
+
+make the file, assuming that the file exists in the same directory with the block-device.data:
+java external_tools.ExternalTools 1 hoho.txt
+
+read the file:
+java external_tools.ExternalTools 2 hoho.txt
+
+delete the file:
+java external_tools.ExternalTools 3 hoho.txt
+
+try to read it again:
+java external_tools.ExternalTools 2 hoho.txt
