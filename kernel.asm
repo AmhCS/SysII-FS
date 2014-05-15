@@ -217,6 +217,7 @@ file_adding_test:                 ;;Let's add two files to the directory!
     ;; complete function call! 
     
     COPY %G3 *%SP                ;; Copy result from fileExists into %G3
+    ADDUS %SP %SP 4
     BEQ +add_file1_to_block_device %G3 0       ;; if it returned 0, then file not found
 
     CALL +fileExists_Args *%G0
@@ -224,6 +225,7 @@ file_adding_test:                 ;;Let's add two files to the directory!
     CALL +fileExists *%G0
     
     COPY %G3 *%SP                ;; checking if file2 exists in your block_device
+    ADDUS %SP %SP 4
     BEQ +add_file2_to_block_device %G3 0
     JUMP +finish_file_adding_test           ;; if both files exist, then we'll begin running processes
     
@@ -509,24 +511,58 @@ system_fork:
 
     ;; System_write expects at least 3 arguments, with %G4 being an optional argument
     ;; %G1 = pointer to filename;  %G2 = pointer to file start;  %G3 = pointer to file end;  %G4 = permissions (4 bits, blank,r,w,x)
-system_write:
-	;; +syscall_Arg1 -> filename
-	;; +syscall_Arg2 -> start address of that file in RAM
-	;; +syscall_Arg3 -> end address of that file in RAM
 
 
-	;; copy arguments into registers
-	COPY %G0 +syscall_Arg1
-	COPY %G1 +syscall_Arg2
-	COPY %G2 +syscall_Arg3
+system_write:			; saving to block device buffer
+	;; syscall_Arg1 has the filename, syscall_Arg2 has the start address, syscall_Arg3 has the end address
 
-write_top:
-	BGTE +write_done %G1 %G2
+	COPY %G1 *+syscall_Arg1
+	COPY %G2 *+syscall_Arg2
+	COPY %G3 *+syscall_Arg3
 
-	ADDUS %G2 %G2 1
-	JUMP +write_top
+	;; syscall_Arg1 was copied to %G1, syscall_Arg2 to %G2, syscall_Arg3 to %G3
+	
+	COPY %G4 +return
+	CALL +fileExists_Args *%G4
+	COPY *%SP %G1
+	CALL +fileExists *%G4	; fileExists returns block number of file
+	COPY %G4 *%SP		; %G4 contains block number of file
+	ADDUS %SP %SP 4		; undo decrementing of SP from the fileExists function
+	
+	BEQ +file-not-found %G4 0
 
-write_done:
+file-found:	
+	COPY %G5 +return
+	CALL +write_block_Args *%G5
+	COPY *%SP %G2
+	SUBUS %SP %SP 4
+	COPY *%SP %G3
+	SUBUS %SP %SP 4
+	COPY *%SP %G4
+	CALL +write_block *%G5
+	;; HALT if debug
+	JUMP +process_table_Run_Next
+
+file-not-found:
+	COPY %G5 +return
+	CALL +input_File_Args *%G5
+	COPY *%SP %G1
+	CALL +input_File *%G5
+
+	CALL +fileExists_Args *%G5    ;; call the functions Args section
+	COPY *%SP %G1          ;; copy your argument into the SP
+	CALL +fileExists *%G5         ;; call the function itself. 
+    
+	COPY %G3 *%SP                ;; Copy result from fileExists into %G3
+	ADDUS %SP %SP 4
+
+	BEQ +file-failure %G3 0       ;; if it returned 0, then file not found
+	JUMP +file-found
+
+file-failure:
+	HALT
+
+
 
 system_read:
     HALT
@@ -1332,11 +1368,11 @@ searchFilesFail:                ;; we searched entire file table and couldn't fi
 
 
 ;;;write_block function: Copies byte by byte from the file_start address to the file_end onto the specified block. 
-;;;args: 1.file_start 2.file_end  3.desired block#	results:0
+;;;args: 1.file_start 2.file_end  3.block_num(integer)	results:0
 
 ;;;If you copy anything to the block base, or anywhere between block base and block_buffer_limit, 
-;;;it doesn't go into the block_device until you put a 1 into the trigger.
-;;;If you put a 0 into the trigger, then that "buffer space" will be filled with the content of the specified block, 
+;;;contents doesn't go into the block_device until you put a 1 into the trigger.
+;;;If you put a 0 into the trigger, then that "buffer space" will be filled with the content of the specified block 
 ;;;instead of pushing things into the block device.
 ;;;COPY first, then put a 1 in block_trigger-- copies whatever you've added to the block_buffer to the block_device.
 
@@ -1353,25 +1389,27 @@ write_block:
 	ADDUS	%FP	%FP	4
 	COPY	%G1	*%FP		;Gets file_end address
 	ADDUS	%FP	%FP	4
-	COPY	%G4	*%FP		;Gets block number
-	
-	COPY	%G3	*+block_num		;Gets block_num address 
-	COPY	*%G3	%G4		;Setting the block number
+	COPY	%G4	*%FP		;Gets block number(an integer not an address) 
 		
 	COPY	%G2 *+block_base		;Get block_base address
+	COPYB		%G5		*%G0
 
 	;; Copy the contents of the specified file, byte by byte, into the block_device.						
 copy_loop_beg:
-	BEQ			+copy_loop_end	%G0	%G1 ; If %G0(file_start address) is equal to %G1 (the file_end address), end the copying.
+	BEQ			+copy_loop_end	%G5	0 ; If %G0(file_start address) is equal to %G1 (the file_end address), end the copying.
 	COPYB		*%G2	*%G0	 ; Copy the current byte of file(*%G0) to block buffer space.
 	ADDUS		%G2		%G2		1 ; Next byte of the the block buffer. %G2 has block_base. 
 	ADDUS		%G0		%G0		1 ; Next byte of the file. Add one to file_start. 
+	COPYB		%G5		*%G0
 	JUMP		+copy_loop_beg
 	
 copy_loop_end:	
+	COPY 	%G2	*+block_num
+	COPY	*%G2 %G4
 	COPY	%G2	*+block_trigger ;Get address of block_trigger 
 	COPY	*%G2 1	;Set block_trigger to 1 to copy contents of buffer space to block_device
-	JUMP	+fDone	;Jumps to fDone
+	
+	JUMP	+fDone;Jumps to fDone
 
 
 
