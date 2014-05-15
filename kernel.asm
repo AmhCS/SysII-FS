@@ -1328,11 +1328,11 @@ searchFilesTop:             ;; outer loop (goes through each filename in the tab
 parseFileNameTop: ;; inner loop (goes through characters in filename)
     BGTE +parseFileNameEnd %G3 12
 
-    ADDUS %G0 %G3 *%FP          ;; readd the offset to the indices
-    COPYB %G1 *%G0              ;;
+    ADDUS %G0 %G3 *%FP          ;; %G0 now holds the first (only) argument, which is the address holding the base of the string filename
+    COPYB %G1 *%G0              ;; %G1 now holds the first byte of this file name
 
-    ADDUS %G0 %G3 %G4           ;; readd the offset to the indices
-    COPYB %G2 *%G0              ;;
+    ADDUS %G0 %G3 %G4           ;; %G0 now points to the first character in the file table
+    COPYB %G2 *%G0              ;; %G4 now holds that first byte of this file name
 
     BNEQ +parseFileFail %G1 %G2 ;; if the two characters don't match, then move to next entry.
     ADDUS %G3 %G3 1             ;; if they do match, try next char in filename and in table entry name.
