@@ -1809,6 +1809,122 @@ open_Block:
         JUMP +fDone
 
 
+;;; 	Write into iNode
+;;; 	Statics Used: source_base, source_limit
+
+write_into_iNode_Args:
+	JUMP +fArgs
+
+write_into_iNode:
+	SUBUS	%SP %SP 4
+	COPY	*%SP	0
+	COPY	%G0 +return2
+	CALL	+fCall *%G0
+
+	
+	COPY %G0 *%FP			;g0 gets arg1: source_base	
+	ADDUS %G4 %FP 4			;using g4 as temp
+	COPY %G1 *%G4			;g1 gets arg 2 : source_limit
+
+	ADDUS %G4 %FP 8
+	COPY %G2 *%G4			;g2 gets arg3: block #
+
+	SUBUS %G5 %G1 %G0		;g5=g1-g0
+
+	BGT +write_L1 %G5 2044 		;branch into L1 if size of the source is > 2044
+	;; Copying soruce_base and source_limits to statics	
+	COPY %G4 +write_iNode_base
+	COPY *%G4 %G0
+
+	COPY %G4 +write_iNode_limit
+	COPY *%G4 %G1
+
+	;;call write_block function	
+	COPY %G4 +return
+	CALL +write_block_Args *%G4
+	;; passing args
+	COPY *%SP %G0
+	SUBUS %SP %SP 4
+	COPY *%SP %G1
+	SUBUS %SP %SP 4
+	COPY *%SP %G2
+	;; Function call
+	CALL +write_block *%G4
+	 		
+ 	JUMP +fDone
+	
+write_L1:
+	
+	;; WRITING THE FIRST 2044 BYTES INTO INODE
+
+	;;Setting the source_limit as source_base+2044
+	ADDUS %G5 %G0 2044		;g5 is limit of first 2044 bytes we want to copy
+
+	COPY %G4 +return
+	CALL +write_block_Args *%G4
+	;; passing args
+	COPY *%SP %G0
+	SUBUS %SP %SP 4
+	COPY *%SP %G5
+	SUBUS %SP %SP 4
+	COPY *%SP %G2
+	;; Function call
+	CALL +write_block *%G4
+	 		
+ 	;; DIRECT INDICES 
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	COPY %G4 +return
+	CALL +find_Next_Free_Block_Args  *%G4
+	;; passing args
+
+	ADDUS %SP %SP 4			;since there are no args, we increase the sp by 4
+
+	;; COPY %SP %G0
+
+	;; Function call
+	CALL +find_Next_Free_Block  *%G4
+	;; SP now contains the # of free block
+	COPY %G5 *%SP 			;G5 contains # of the next free block 
+
+	ADDUS %SP %SP 4
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	
+	COPY %G4 +return
+	CALL +increment_Free_Block_Args *%G4
+	;; passing args
+
+	ADDUS %SP %SP 4			;since there are no args, we increase the sp by 4
+
+	;; COPY %SP %G0
+
+	;; Function call
+	CALL +increment_Free_Block *%G4
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	ADDUS %G0 *+write_iNode_base 2044
+	ADDUS %G1 %G0 4096
+
+	BGT +write_L2 +write_iNode_limit %G1
+	COPY %G1 *+write_iNode_limit 
+	
+write_L2:
+	;; CALLING write_block FUNCTION , yet again
+
+	COPY %G4 +return
+	CALL +write_block_Args *%G4
+	;; passing args
+	COPY *%SP %G0
+	SUBUS %SP %SP 4
+	COPY *%SP %G1
+	SUBUS %SP %SP 4
+	COPY *%SP %G5
+	;; Function call
+	CALL +write_block *%G4
+	
+	JUMP +fDone
+	
+
+
 
 	.Numeric
 total_PIDs: 0x00	; total amount of pids
@@ -1873,7 +1989,8 @@ block_limit: 0x00
 block_num: 0x00
 block_trigger: 0x00
 block_buffer_limit: 0x00
-
+write_iNode_base: 0x00
+write_iNode_limit: 0x00
 	;; Will load the next program, and run it in user mode
 	;; Doesn't matter if programs don't finish. 
 
