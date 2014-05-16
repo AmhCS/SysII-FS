@@ -1809,6 +1809,169 @@ open_Block:
         JUMP +fDone
 
 
+print_File_Args:
+	JUMP +fArgs
+
+print_File:
+	SUBUS   %SP    %SP    4
+	COPY    %SP    0
+	COPY    %G0    +return2
+	CALL    +fcall *%G0
+	
+	;; Find file' location in block dev
+	COPY    %G0    +return
+	CALL    +fileExists_Args    *%G0
+	;; FP will have args
+	COPY    *%SP   *%FP
+	CALL    +fileExists   *%G0
+	COPY    %G3    *%SP
+	;; G3 holds block number
+	ADDUS   %SP    %SP    4
+
+	;; First load beginning address of BC into SP
+	COPY    %SP    0x00001000
+	;; Now loop to find BD
+top1:	BEQ     +end1  *%SP    5
+	ADDUS   %SP    %SP     12
+	JUMP    +top1
+end1:
+	;; Now SP points to block dev
+
+	ADDUS   %SP    %SP     4
+	;; SP is now holding a BC address that contains the block dev base
+	COPY    %G0    *%SP
+	;; G0 now holds the block dev buffer base
+	ADDUS   %G1    %G0     4096
+	;; G1 now holds the block dev buffer's file storage area limit
+
+	COPY    *%G1   %G3
+	ADDUS   %G1    %G1    4
+	COPY    *%G1   0x00000000
+
+	COPY    %G0    +return
+	CALL    +print_Args  *%G0
+	COPY    *%SP   %G0
+	CALL    +print *%G0
+
+    JUMP +fDone
+    
+
+;;; 	Write into iNode
+;;; 	Statics Used: source_base, source_limit
+
+write_into_iNode_Args:
+	JUMP +fArgs
+
+write_into_iNode:
+	SUBUS	%SP %SP 4
+	COPY	*%SP	0
+	COPY	%G0 +return2
+	CALL	+fCall *%G0
+
+
+	COPY %G0 *%FP			;g0 gets arg1: source_base	
+	ADDUS %G4 %FP 4			;using g4 as temp
+	COPY %G1 *%G4			;g1 gets arg 2 : source_limit
+
+	ADDUS %G4 %FP 8
+	COPY %G2 *%G4			;g2 gets arg3: block #
+
+	SUBUS %G5 %G1 %G0		;g5=g1-g0
+
+	BGT +write_L1 %G5 2044 		;branch into L1 if size of the source is > 2044
+	;; Copying soruce_base and source_limits to statics	
+	COPY %G4 +write_iNode_base
+	COPY *%G4 %G0
+
+	COPY %G4 +write_iNode_limit
+	COPY *%G4 %G1
+
+	;;call write_block function	
+	COPY %G4 +return
+	CALL +write_block_Args *%G4
+	;; passing args
+	COPY *%SP %G0
+	SUBUS %SP %SP 4
+	COPY *%SP %G1
+	SUBUS %SP %SP 4
+	COPY *%SP %G2
+	;; Function call
+	CALL +write_block *%G4
+
+ 	JUMP +fDone
+
+write_L1:
+
+	;; WRITING THE FIRST 2044 BYTES INTO INODE
+
+	;;Setting the source_limit as source_base+2044
+	ADDUS %G5 %G0 2044		;g5 is limit of first 2044 bytes we want to copy
+
+	COPY %G4 +return
+	CALL +write_block_Args *%G4
+	;; passing args
+	COPY *%SP %G0
+	SUBUS %SP %SP 4
+	COPY *%SP %G5
+	SUBUS %SP %SP 4
+	COPY *%SP %G2
+	;; Function call
+	CALL +write_block *%G4
+
+ 	;; DIRECT INDICES 
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	COPY %G4 +return
+	CALL +find_Next_Free_Block_Args  *%G4
+	;; passing args
+
+	ADDUS %SP %SP 4			;since there are no args, we increase the sp by 4
+
+	;; COPY %SP %G0
+
+	;; Function call
+	CALL +find_Next_Free_Block  *%G4
+	;; SP now contains the # of free block
+	COPY %G5 *%SP 			;G5 contains # of the next free block 
+
+	ADDUS %SP %SP 4
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+	COPY %G4 +return
+	CALL +increment_Free_Block_Args *%G4
+	;; passing args
+
+	ADDUS %SP %SP 4			;since there are no args, we increase the sp by 4
+
+	;; COPY %SP %G0
+
+	;; Function call
+	CALL +increment_Free_Block *%G4
+
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	ADDUS %G0 *+write_iNode_base 2044
+	ADDUS %G1 %G0 4096
+
+	BGT +write_L2 +write_iNode_limit %G1
+	COPY %G1 *+write_iNode_limit 
+
+write_L2:
+	;; CALLING write_block FUNCTION , yet again
+
+	COPY %G4 +return
+	CALL +write_block_Args *%G4
+	;; passing args
+	COPY *%SP %G0
+	SUBUS %SP %SP 4
+	COPY *%SP %G1
+	SUBUS %SP %SP 4
+	COPY *%SP %G5
+	;; Function call
+	CALL +write_block *%G4
+
+	JUMP +fDone
+
+
+
 
 	.Numeric
 total_PIDs: 0x00	; total amount of pids
